@@ -128,7 +128,7 @@ static int call_trace(Py_tracefunc, PyObject *, PyFrameObject *,
                       int, PyObject *);
 static int call_trace_protected(Py_tracefunc, PyObject *,
                                 PyFrameObject *, int, PyObject *);
-static void call_exc_trace(Py_tracefunc, PyObject *, PyFrameObject *);
+static int call_exc_trace(Py_tracefunc, PyObject *, PyFrameObject *);
 static int maybe_call_line_trace(Py_tracefunc, PyObject *,
                                  PyFrameObject *, int *, int *, int *);
 
@@ -2861,9 +2861,14 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
         if (why == WHY_EXCEPTION) {
             PyTraceBack_Here(f);
 
-            if (tstate->c_tracefunc != NULL)
-                call_exc_trace(tstate->c_tracefunc,
-                               tstate->c_traceobj, f);
+            if (tstate->c_tracefunc != NULL) {
+              if (call_exc_trace(tstate->c_tracefunc,
+                                 tstate->c_traceobj, f)) {
+                Py_INCREF(f->target_f_retval);
+                PUSH(f->target_f_retval);
+                why = WHY_NOT;
+              }
+            }
         }
 
         /* For the rest, treat WHY_RERAISE as WHY_EXCEPTION */
@@ -3631,30 +3636,38 @@ prtrace(PyObject *v, char *str)
 }
 #endif
 
-static void
+static int
 call_exc_trace(Py_tracefunc func, PyObject *self, PyFrameObject *f)
 {
-    PyObject *type, *value, *traceback, *arg;
+    PyObject* arg;
     int err;
-    PyErr_Fetch(&type, &value, &traceback);
-    if (value == NULL) {
-        value = Py_None;
-        Py_INCREF(value);
+    PyErr_Fetch(&f->target_f_exc_type, &f->target_f_exc_value, &f->target_f_exc_traceback);
+    f->target_f_retval = NULL;
+    if (f->target_f_exc_value == NULL) {
+        f->target_f_exc_value = Py_None;
+        Py_INCREF(f->target_f_exc_value);
     }
-    arg = PyTuple_Pack(3, type, value, traceback);
+    arg = PyTuple_Pack(3, f->target_f_exc_type, f->target_f_exc_value, f->target_f_exc_traceback);
     if (arg == NULL) {
-        PyErr_Restore(type, value, traceback);
-        return;
+        fprintf(stderr, "C[python ceval.c]: don't know what is this code \n");
+        PyErr_Restore(f->target_f_exc_type, f->target_f_exc_value, f->target_f_exc_traceback);
+        return 0;
     }
     err = call_trace(func, self, f, PyTrace_EXCEPTION, arg);
     Py_DECREF(arg);
     if (err == 0)
-        PyErr_Restore(type, value, traceback);
+      if (f->target_f_exc_value == NULL) {
+        PyErr_Restore(NULL, NULL, NULL);
+        return 1; //user cleared exceptions. signal we want to use his retval
+      } else {
+        PyErr_Restore(f->target_f_exc_type, f->target_f_exc_value, f->target_f_exc_traceback);
+      }
     else {
-        Py_XDECREF(type);
-        Py_XDECREF(value);
-        Py_XDECREF(traceback);
+        Py_XDECREF(f->target_f_exc_type);
+        Py_XDECREF(f->target_f_exc_value);
+        Py_XDECREF(f->target_f_exc_traceback);
     }
+    return 0;
 }
 
 static int
