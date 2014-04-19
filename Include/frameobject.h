@@ -45,6 +45,7 @@ typedef struct _frame {
        bytecode index. */
     int f_lineno;		/* Current line number */
     int f_iblock;		/* index in f_blockstack */
+    PyObject *target_f_exc_type, *target_f_exc_value, *target_f_exc_traceback, *target_f_retval;
     PyTryBlock f_blockstack[CO_MAXBLOCKS]; /* for try and loop blocks */
     PyObject *f_localsplus[1];	/* locals+stack, dynamically sized */
 } PyFrameObject;

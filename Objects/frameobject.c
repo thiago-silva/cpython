@@ -20,6 +20,9 @@ static PyMemberDef frame_memberlist[] = {
     {"f_builtins",      T_OBJECT,       OFF(f_builtins),RO},
     {"f_globals",       T_OBJECT,       OFF(f_globals), RO},
     {"f_lasti",         T_INT,          OFF(f_lasti),   RO},
+    {"target_f_exc_type", T_OBJECT,    OFF(target_f_exc_type), 0},
+    {"target_f_exc_value", T_OBJECT,   OFF(target_f_exc_value), 0},
+    {"target_f_exc_traceback", T_OBJECT,    OFF(target_f_exc_traceback), 0},
     {NULL}      /* Sentinel */
 };
 
@@ -383,6 +386,40 @@ frame_getrestricted(PyFrameObject *f, void *closure)
     return PyBool_FromLong(PyFrame_IsRestricted(f));
 }
 
+static PyObject *
+frame_get_target_f_retval(PyFrameObject *f, void *closure)
+{
+    PyObject* retval = f->target_f_retval;
+
+    if (retval == NULL)
+        retval = Py_None;
+
+    Py_INCREF(retval);
+
+    return retval;
+}
+
+static int
+frame_set_target_f_retval(PyFrameObject *f, PyObject* v, void *closure)
+{
+  PyObject* old_value;
+
+  Py_XDECREF(f->target_f_exc_type);
+  Py_XDECREF(f->target_f_exc_value);
+  Py_XDECREF(f->target_f_exc_traceback);
+
+  f->target_f_exc_type = NULL;
+  f->target_f_exc_value = NULL;
+  f->target_f_exc_traceback = NULL;
+
+
+  old_value = f->target_f_retval;
+  Py_XINCREF(v);
+  f->target_f_retval = v;
+  Py_XDECREF(old_value);
+  return 0;
+}
+
 static PyGetSetDef frame_getsetlist[] = {
     {"f_locals",        (getter)frame_getlocals, NULL, NULL},
     {"f_lineno",        (getter)frame_getlineno,
@@ -395,6 +432,8 @@ static PyGetSetDef frame_getsetlist[] = {
                     (setter)frame_set_f_exc_type, NULL},
     {"f_exc_value", (getter)frame_get_f_exc_value,
                     (setter)frame_set_f_exc_value, NULL},
+    {"target_f_retval", (getter)frame_get_target_f_retval,
+                        (setter)frame_set_target_f_retval, NULL},
     {0}
 };
 
