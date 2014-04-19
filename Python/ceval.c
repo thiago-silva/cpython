@@ -875,7 +875,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
         return NULL;
 
     tstate->frame = f;
-
+    int _res_trace;
     if (tstate->use_tracing) {
         if (tstate->c_tracefunc != NULL) {
             /* tstate->c_tracefunc, if defined, is a
@@ -891,9 +891,14 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                an argument which depends on the situation.
                The global trace function is also called
                whenever an exception is detected. */
-            if (call_trace_protected(tstate->c_tracefunc,
-                                     tstate->c_traceobj,
-                                     f, PyTrace_CALL, Py_None)) {
+          if (_res_trace = call_trace_protected(tstate->c_tracefunc,
+                                                 tstate->c_traceobj,
+                                                 f, PyTrace_CALL, Py_None)) {
+            if (_res_trace == 1) {
+                Py_INCREF(f->target_f_retval);
+                retval = f->target_f_retval;
+                why = WHY_RETURN;
+            }
                 /* Trace function raised an error */
                 goto exit_eval_frame;
             }
@@ -901,9 +906,14 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
         if (tstate->c_profilefunc != NULL) {
             /* Similar for c_profilefunc, except it needn't
                return itself and isn't called for "line" events */
-            if (call_trace_protected(tstate->c_profilefunc,
+            if (_res_trace = call_trace_protected(tstate->c_profilefunc,
                                      tstate->c_profileobj,
                                      f, PyTrace_CALL, Py_None)) {
+            if (_res_trace == 1) {
+                Py_INCREF(f->target_f_retval);
+                retval = f->target_f_retval;
+                why = WHY_RETURN;
+            }
                 /* Profile function raised an error */
                 goto exit_eval_frame;
             }
@@ -3674,19 +3684,25 @@ static int
 call_trace_protected(Py_tracefunc func, PyObject *obj, PyFrameObject *frame,
                      int what, PyObject *arg)
 {
-    PyObject *type, *value, *traceback;
+    /* PyObject *type, *value, *traceback; */
     int err;
-    PyErr_Fetch(&type, &value, &traceback);
+    PyErr_Fetch(&frame->target_f_exc_type, &frame->target_f_exc_value, &frame->target_f_exc_traceback);
+    frame->target_f_retval = NULL;
     err = call_trace(func, obj, frame, what, arg);
     if (err == 0)
     {
-        PyErr_Restore(type, value, traceback);
+      if (what == PyTrace_CALL && frame->target_f_retval != NULL) {
+        PyErr_Restore(NULL, NULL, NULL);
+        return 1; //user explicitly set retval, premature returning with value target_f_retval
+      } else {
+        PyErr_Restore(frame->target_f_exc_type, frame->target_f_exc_value, frame->target_f_exc_traceback);
         return 0;
+      }
     }
     else {
-        Py_XDECREF(type);
-        Py_XDECREF(value);
-        Py_XDECREF(traceback);
+        Py_XDECREF(frame->target_f_exc_type);
+        Py_XDECREF(frame->target_f_exc_value);
+        Py_XDECREF(frame->target_f_exc_traceback);
         return -1;
     }
 }
